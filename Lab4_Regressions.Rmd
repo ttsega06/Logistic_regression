@@ -1,0 +1,480 @@
+---
+title: 'Lab 4: Linear and Logistic regression'
+author: "Tedros Tsegay"
+output:   
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Goals:
+In this lab you will review, learn from, and improve on models built via linear regression and logistic regression. At the end, you should:
+
+ + Understand how to use linear regression in R to output the coefficients for a prediction model like $$Y \approx \beta_0 + \beta_1 \cdot X_1   +\beta_2 \cdot X_2 + \ldots$$
+ 
+ + Know that you can use Boolean indicator variables to encode non-numeric factors for use in a regression.
+ 
+ + Understand how to interpret the "summary" of a model built in R including:
+ 
+     + coefficients and their statistical significance as built up from the standard error, t-value, and finally p-value
+     
+     + R-squared (in a linear regression) -- if this is small (e.g. < 0.6) the model is not very reliable for using for predictions.
+   
+ + Use the linear model (and `predict` method) in R to apply the model and compare predictions to the actual values.
+ 
+ + Understand that logistic regression is used to predict a boolean (yes/no) output.
+ 
+ + Be able to build a logistic regression, interpret the summary, and use the model for predictions.
+ 
+ + Measure the accuracy of a logistic regression based on the % of data points it is accurate for.
+
+# Task 1: Linear regression
+
+Linear regression is used to **predict a NUMERIC output variable** (like a person's height, income, or the number of songs they'll listen to in your app) when there are other factors that have a strong relationship with the variable you are trying to predict.
+
+In this task I'll give a demo of usage of linear regression in R, and ask you to answer questions along the way. Then you'll try to best the model we construct. 
+
+Our goal: to try to predict the annual medical costs for each person (as billed by health insurance) as a function of several factors including age, sex, BMI, # of dependents, whether the person smokes, and the region of the US they live in.
+
+
+
+### Step 0: download and review data
+
+Download the InsuranceData file and run the following code (also remove the eval=FALSE so these render in your knit html!!!)
+
+```{r}
+
+# add the line to import the InsuranceData.csv file
+insurance <- read.csv("C:/Users/TedrosTsegay/Desktop/Math270/Lab4/insurance.csv")
+head(insurance)
+hist(insurance$charges)
+```
+
+As an observation, if I know *nothing* about an individual, I might predict their Insurance charges to be $13,270.42 (the average), but I'd expect that to be pretty far off from each individual's value.
+```{r}
+mean(insurance$charges)
+```
+Let's check a few factors to see if they have strong relationships with the insurance charges
+```{r}
+plot(insurance$age, insurance$charges)
+```
+
+Interesting! (there seems to be a relationship, but it also looks like there are 3 different groupings!?)
+
+
+
+```{r}
+plot(insurance$bmi, insurance$charges)
+```
+
+```{r}
+boxplot(insurance$charges ~insurance$sex)
+```
+
+
+```{r}
+boxplot(insurance$charges ~insurance$smoker)
+```
+
+```{r}
+boxplot(insurance$charges~insurance$region)
+```
+Hmm... all the regions have roughly the same median, though some (e.g. southeast) seem to have more individuals with high charges.
+
+# Step 1: reserve some "testing" data
+
+Normally we'd reserve a big testing set. You'll do this in the logistic regression task. For this example, I'll just take a couple data points and pull them out of the full data set:
+
+```{r}
+set.seed(50)
+testIndices = sample(nrow(insurance),5)
+
+reservedInsuranceForTesting = insurance[testIndices,] # set aside some test rows of data
+
+InsuranceData = insurance[-testIndices,] # remove the test indices from the training data set
+```
+
+
+## Example 1: a simple linear model using the lm (linear model) function. 
+
+To start with, let's try to predict the charges JUST based on age:
+
+```{r}
+insurance.lm.age_only <- lm(charges ~ age, data = InsuranceData)
+```
+
+We can plot this:
+```{r}
+
+plot(InsuranceData$charges ~ InsuranceData$age, xlab="Age", ylab="Charges")
+abline(insurance.lm.age_only, col="blue")
+```
+
+It mainly fits the slope... but since there are kind of 3 main lines it doesn't seem to fit the data particularly well. To get a sense of this, let's review the "summary" of the model:
+
+```{r}
+summary(insurance.lm.age_only)
+```
+
+
+### How do we interpret the model summary?
+
+**Residuals:**
+This gives a summary of how "bad" the model's predictions are on the training data by looking at residual error (actual charge - predicted charge). It reports min, 25th percentile, 50th percentile, 75th percentile, and max residual.
+
+
+Ideally the median would be around 0 (1/2 data points are overestimated, 1/2 are underestimated), and the quarti.les would be close to 0 as well. In this model, we don't have that... which generally indicates the model is missing something substantial.
+
+In this case, the min Residual = -\$8,021 means that the worst overestimate by the model was \$8021 (the actual is that much less than the model).  Because the median error is -\$5,901, we know that half of the time the model overestimates by at most \$5,901. The other half of data points are either underestimates, or overestimated by less than \$5,901.
+
+**Table -- Coefficients column: **
+
+These are the slope and intercept coefficients $\beta_0,\beta_1$ for the model $\hat{y} = \beta_0 + \beta_1 \cdot x$.
+
+From this, I can tell the model gives the equation: $$Charges \approx 3079.90 + 258.92 * age$$
+
+
+
+
+Meaning that even for a "0" year old, we'd expect a charge of \$ 3,079.90 (note we actually only have data for people who are 18+ in age).
+
+And on average, each additional year of age leads to an estimated increase of \$ 258.92.
+
+So for someone who is 30 years old, using our model we'd predict they'd have \$10,847.5 in insurance charges.
+
+**Table -- Std. Error column:**
+
+ This is the standard error of the coefficient and gives a sense of how much we might expect the coefficient estimates to change if we had taken a different sample instead. 
+ 
+We can see that the age coefficient (estimated at 258.92 from this particular data sample) has a standard error of around $\pm 22.41$ -- so that coefficient could very easily be anywhere between e.g. 236.51 and 281.33, but is very unlikely to be -50 (since that would be 13 SE away from the measured estimate!).
+
+**Table -- t-value column:**
+
+(aka z-score) This gives the # of SE the coefficient is from 0. So, for example the intercept estimate of 3079.90 has SE=933.62. this means that t or z score will be: $z = \frac{3079.9 - 0 }{933.62} \approx 3.299$.  
+
+Remember: if the estimate is within one or two SE of 0, that "0" is  within the error bounds from the measured value.
+
+
+**Table -- Pr(>|t|) column:**
+
+This is the p-value! What is the probability of getting a sampled estimate at least this many SE from 0, if the "true" value is 0?
+
+Tiny p-values (which happen for big t-values) indicate the data is strong evidence the particular coefficient is NOT 0 -- so the factor is useful in predicting the overall outcome.
+
+Here age (and the intercept) are both found to be stat-sig in their assistance to predict the insurance cost.
+
+
+
+
+
+**Other summary contents:**
+
+`Residual standard error: 11490 on 1331 degrees of freedom.`
+
+Residual standard error captures: how much do the residuals vary? Ideally this is pretty small (meaning the residuals tend to be close to 0). Here it is not, indication the model has a lot of room to improve!
+
+This is approximately the standard deviation of residuals: `sd(insurance.lm.age_only$residuals) = 11489.37`, its off by a bit because of an adjustment from "degrees of freedom" (which is # rows of data - # coefficients in the model).
+
+
+
+`Multiple R-squared:  0.09118,	Adjusted R-squared:  0.0905 `
+
+These are "R-squared" values, also known as the "coefficient of determination". Generally, we want these to be as close to 1 as possible. $R^2$ is computed directly by taking $1- Var(\epsilon)/Var(Y)$, when $\epsilon$ represents the residuals, and $Y$ represents the value you are trying to predict (here insurance charges):
+
+```{r}
+epsilon = insurance.lm.age_only$residuals
+Y = InsuranceData$charges
+Rsq = 1 - var(epsilon) / var(Y)
+Rsq
+```
+
+This tells us "out of all the original 100% of variance in insurance charges, how much is explained by our model?" This is why we want it to be big: we want the model to explain most of how the output variable changes for each person!
+
+Here $R^2$ is only about 9% of the variance in insurance charges is explained by taking age into account. So we have about 91% of the differences in insurance charges unexplained still!
+
+
+How about the adjusted R-squared? It adjusts for the fact that adding variables skews this, and is a "corrected" version that is a bit more reliable. You can interpret it in the same way, otherwise.
+
+
+
+`F-statistic: 133.5 on 1 and 1331 DF,  p-value: < 2.2e-16`
+The F-statistic is kind of like a t-score, but for the overall model compared to just using the "naive" prediction of predicting everyone as the average. Here we can just rely on the p-value, which by being so small indicates this model is a statistically significant improvement over the naive prediction.
+
+### Using the model
+
+Even though this isn't a GOOD model, I'll demonstrate how to use the model to predict data points using the `predict(model, dataToPredictFrom, optionalArguments)` method
+
+```{r}
+chargePrediction = predict(insurance.lm.age_only, reservedInsuranceForTesting, interval = "prediction", level=0.99)
+
+cbind(actual = reservedInsuranceForTesting$charges, chargePrediction)
+```
+Here the first column I set up as the actual charge for the data set, while the "fit" column is the prediction. You can see we have some REALLY bad guesses. Most do tend to be in between the "lwr" and "upr" guesses -- but more because those are HUGE (and so not very useful) ranges rather than because our guesses are accurate.
+
+## Example 1.b -- let's add another variable! (also: indicator variable!)
+
+Let's build a model for predicting insurance charges that relies on both age and "smoker" status.
+
+But "smoker" is not numeric! How can we find a "coefficient" on it?
+
+
+Simple: we can treat it as a binary 0,1 variable.
+Encode everyone who is a smoker as "1" and everyone who is not as a "0" in this column.
+
+e.g:
+
+```{r}
+smokerIndicator = ifelse(InsuranceData$smoker == "yes" , 1 , 0) 
+
+InsuranceDataWithSmokeIndicator = cbind(InsuranceData, smokerIndicator)
+head(InsuranceDataWithSmokeIndicator)
+```
+
+Now this "smokerIndicator" column is numeric -- and the coefficient will give the extra charge expected if someone is a smoker (e.g. if the coefficient for smoker is \$1,000, it would mean smokers on average have \$1,000 higher medical charges).
+
+
+**The use of "boolean indicators (0,1)" like we did above is a super common trick for incorporating categories into a regression**
+
+
+Here's that model:
+
+```{r}
+insurance.lm<-lm(charges ~ age + smokerIndicator  , data=InsuranceDataWithSmokeIndicator)
+
+summary(insurance.lm)
+```
+
+
+This gives the equation:
+
+$$charges \approx -2409.85 + 275.41*age + 23733.67*smokerIndicator$$
+Whoah! Even adjusting for age, smoking ups the predicted medical cost by over \$23,460.93!  
+
+
+You can also think of this as two equations.
+When smokerIndicator=0 (nonsmoker):
+
+$$charges \approx -2409.85 + 275.41*age$$
+and when smokerIndicator=1 (smoker):
+$$charges \approx -2409.85 + 271.11*age + 23733.67 $$
+Just for fun, let's see what happens when we plot these nonsmoker (blue) and smoker (red) lines:
+
+```{r}
+colors_smokers = InsuranceData$smoker
+colors_smokers[InsuranceData$smoker == 'yes'] = "red"  
+colors_smokers[InsuranceData$smoker == 'no'] = "blue"
+
+plot(InsuranceData$charges ~ InsuranceData$age, xlab="Age", ylab="Charges",col=colors_smokers)
+abline(-2409.85,275.41, col="blue") 
+abline(-2409.85+ 23733.67,275.41, col="red") 
+```
+Interesting! the blue line does seem to fit the non-smokers, who have lower charges. And red is central to the smoker data points.
+
+### How much have we improved our predictions by adding the smoker indicator?
+
+```{r}
+summary(insurance.lm)
+```
+
+All the coefficients are statistically significant (indicating they are all useful for improving our prediction), and the R-squared has jumped to over 70% of the variance in charge now explained in the model! Excellent!!
+
+[Note: R actually will automatically treat string columns as factors, so if you are careful with it, you can just use the original smoker column as a factor]
+
+## Beat the model!
+
+1. Create a model that incorporates more of the factors. Your goal: get the % of variance explained above 72.05% (using adjusted Rsquared), while having all the factors you include be statistically significant (p-value < 0.05). Show the code as well as the summary for your model
+
+```{r}
+smokerIndicator = ifelse(InsuranceData$smoker == "yes" , 1 , 0) 
+bmi25up = ifelse(InsuranceData$bmi > 25, 1, 0)
+children = ifelse(InsuranceData$children > 0, 1, 0)
+FinalInsuranceData = cbind(InsuranceData, InsuranceData$age, smokerIndicator, bmi25up, children)
+insurance.lm.all<-lm(charges ~ age + smokerIndicator + bmi25up + children, data=FinalInsuranceData)
+summary(insurance.lm)
+```
+
+
+2. What is the equation for your model?
+
+
+$$charges \approx -5269.06 + 265.24*age + 23781.15*smokerIndicator + 3296.45*bmi25up + 513.78*children$$
+
+
+3. What does the coefficient on "children" mean (in terms of increase in predicted medical cost)?  Also, show how the t-value is computed for this coefficient.
+
+Answer: The coefficient on "Children" is 513.78 which means that medical cost is increased times when an individual has at least one child. 
+The Standard Error according to the table is 141.26. The estimate (intercept) is 513.78 so the t-value = (513.78 -0)/ 141.26 = 3.6371. 
+
+4. Do the computation to compute the R-squared value following the equation $1- Var(\epsilon)/Var(Y)$, as I did in the first model. Your result should match the summary's R-squared.
+
+```{r}
+epsilon = insurance.lm$residuals
+Y = FinalInsuranceData$charges
+Rsq = 1 - var(epsilon) / var(Y)
+Rsq
+```
+
+
+5. Build the table for the actual vs. the predicted values for the reserved test data set ()
+```{r}
+smokerIndicator = ifelse(reservedInsuranceForTesting$smoker == "yes" , 1 , 0) 
+bmi25up = ifelse(reservedInsuranceForTesting$bmi > 25, 1, 0)
+children = ifelse(reservedInsuranceForTesting$children > 0, 1, 0)
+
+cbind(actual = reservedInsuranceForTesting$charges, chargePrediction, smokerIndicator, bmi25up, children)
+```
+
+
+Note: there is a LOT more about model evaluation of a linear regression, so if you end up using regression in the future, I hope you are empowered to understand the basics from this class, but to dive deeper as your use requires!
+
+
+# Task 2: Logistic Regression
+
+Logistic regression is used to **predict a Boolean output variable** (like whether an email is "spam", whether a biopsy is from cancerous tissue, whether a song will receive a "thumbs up" from a listener) from other factors that have a strong relationship with the outcome you are trying to predict.
+
+
+In this task I'll give a demo of usage of logistic regression in R.
+
+This example will classify whether patients survived 5 years after an operation to remove cancerous breast tissues, based on the patient's age at time of operation, the operation year (in # of years after 1900), and the number of axillary nodes detected. The data set was collected between 1958 and 1970 at University of Chicago's Billings Hospital. Makes sure you import the data and set the `eval` flag to `TRUE` before running the code below.
+
+### Step 0: download and review data
+
+Download the SurvivalCancer data and run the following code (also remove the eval=FALSE so these render in your knit html!!!)
+
+```{r}
+SurvivalCancer <- read.csv("C:/Users/TedrosTsegay/Desktop/Math270/Lab4/SurvivalCancer.csv")
+head(SurvivalCancer)
+```
+In this data set, the "survival" column is 0 if the patient died within 5 years, and 1 if the patient survived at least 5 years after the surgery.
+
+**In this task, we'll try to see whether we can use patient's age, the surgery year, and # of nodes detected to inform our prediction of a patient's survival (1 or 0).**
+
+
+
+Since the output is binary "0" or "1" instead of a full numeric range, a standard linear regression isn't appropriate. Instead we'll try to fit a "logistic" function.
+
+
+If we don't have the model that incorporates the other factors, we could naively predict that all patients will survive.
+That'd be saying our prediction = 1, regardless of the age, year, and nodes detected.
+```{r}
+prediction = rep(1, nrow(SurvivalCancer))
+```
+
+This naive prediction ends up accurate for all the people that survive, and incorrect for all the patients that did not. The overall accuracy of this naive model is around 73.5% since 73.5% of patients did survive:
+
+```{r, eval = T}
+sum(prediction == SurvivalCancer$survival)/nrow(SurvivalCancer)
+```
+
+Can we use the other data to get a higher accuracy?
+
+
+### Step 1: partition into training and testing sets.
+
+Whenever we train a model, it is always best to first split data into test and training sets so you can validate the model on "new" data. Here I'll (arbitrarily) use 75% of the data to train the model.
+```{r}
+set.seed(6000)
+n = floor(0.75*nrow(SurvivalCancer))
+
+train.indices=sample(nrow(SurvivalCancer),n)
+
+train.data=SurvivalCancer[train.indices,]
+test.data=SurvivalCancer[-train.indices,]
+```
+
+
+### Step 2: build the logistic model using the glm (generalized linear model) function. 
+
+Here "glm" allows us to fit coefficients for more complicated equations - not just straight lines. The logit link function in particular allows us to model the log-odds.
+
+```{r}
+model<-glm(survival~.,family=binomial(link='logit'),data=train.data)
+summary(model)
+
+```
+
+2.1: In the summary, we can tell from the sign of coefficients that as age of the patient increases our model predicts (LOWER, HIGHER) chance of survival. [pick one.]
+
+#### I would pick Lower
+
+2.2: In the summary we can see that of the variables considered only (AGE, YEAR OF SURGERY, NUMBER OF NODES) is found to have a statistically significant impact on the chance of survival.
+
+#### Number of nodes
+
+2.3: The intercept coefficient is very large (over 3), and yet isn't found to be statistically significant. Use the Std. Error to explain why.
+
+#### The average variation is greater than the estimated value for the intercept alone. Additionally, the standard error is nearly equal to the intercept value, indicating that the intercept coefficient is not statistically significant.
+
+### Step 3:how accurate is this model on the training set?
+
+The logistic regression returns a # from 0 to 1. Generally, if the output is >0.5 we say the model predicts "1" (here that means survival), while if the output is $\le$ 0.5 we conclude the model predicts "0" (no survival). [There are times where you can train the threshold slightly to improve accuracy]
+
+```{r}
+train.fitted<-predict(model,newdata=train.data,type="response")
+train.fitted<-ifelse(train.fitted>0.5,1,0) 
+
+train.accuracy<-mean(train.fitted == train.data$survival) 
+train.accuracy
+```
+
+3.1: What is the overall accuracy on the training data set? Is it better than the "naive" model that all patients survive?
+
+####The training accuracy is 75.98%, which is higher than the previously mentioned accuracy of the naive model at around 73.5%. This indicates that the overall accuracy on the training dataset has improved with our model.
+
+3.2: What fraction of surviving patients have the correct prediction? And what fraction of non-surviving patients?
+
+```{r}
+train.survivalData <- subset(train.data, survival == 1)
+train.fittedSurvival <- predict(model, newdata = train.survivalData, type = "response")
+train.fittedSurvival<- ifelse(train.fittedSurvival> 0.5,1,0)
+train.survivalAccurancy <- mean(train.fittedSurvival)
+train.survivalAccurancy
+ 
+
+train.nonSurvivalData <- subset(train.data, survival == 0)
+train.fittedNonSurvival <- predict(model, newdata = train.nonSurvivalData, type = "response")
+train.fittedNonSurvival<- ifelse(train.fittedNonSurvival> 0.5,1,0)
+train.nonSurvivalAccurancy <- 1 - mean(train.fittedNonSurvival)
+train.nonSurvivalAccurancy 
+```
+
+
+### Step 4: how accurate is the model on the testing set?
+
+4.1 Generally we expect a model to be slightly (MORE, LESS) accurate on the test data since the model wasn't trained on it. [pick one]
+
+####  I would pick LESS
+
+We can measure accuracy exactly like we did in step 3, but with the reserved test data instead.
+
+```{r}
+test.fitted<-predict(model,newdata=test.data,type="response")
+test.fitted<-ifelse(test.fitted>0.5,1,0)
+test.accuracy<-mean(test.fitted == test.data$survival)
+test.accuracy
+```
+
+
+
+4.1: What is the overall accuracy of our logistic model on the testing data set? $0.7272727$. And which of the following would you use to describe the accuracy on test set vs. training set:
+
+a. The accuracy is nearly as high in test set, indicating no/limited overfit of the model.
+b. The accuracy is much lower in the test set, indicating the model was perhaps overfit to the training data.
+c. The accuracy is higher in the test set, indicating the training set might have been particularly hard to model.
+
+#### I would use opetion a, to describe the accuracy on test set vs. training set 
+
+4.2: In comparison to the "naive" model where you predict all patients will survive: does it seem like incorporating patient age, surgery year, and # nodes detected has improved your predictions? 
+```{r}
+naiveaccuracy = sum(test.data$survival == 1)/nrow(test.data)
+naiveaccuracy
+
+```
+####The naive model achieved an accuracy of 71.4%. Our improved model showed slight improvement but not significantly higher. In order to develop a more accurate predictive model, it would be beneficial to obtain more recent data and explore additional factors that could potentially influence the outcomes
+
+
+
+
